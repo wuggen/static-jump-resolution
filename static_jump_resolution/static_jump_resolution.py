@@ -12,6 +12,31 @@ import functools
 l = logging.getLogger(name=__name__)
 l.setLevel(logging.DEBUG)
 
+class BlockResults:
+    def __init__(self, fn, node, state):
+        self.fn = fn
+        self.node = node
+        self.state = state
+
+    @property
+    def addr(self):
+        return self.node.addr
+
+    @property
+    def function_addr(self):
+        return self.fn.addr
+
+    @property
+    def block(self):
+        return self.node.block
+
+    def __str__(self):
+        s  = "== Results for block at 0x%x in %s:" % (self.addr, self.fn.__repr__())
+        for defn in self.state:
+            s += "\n    %s" % defn
+
+        return s
+
 class StaticJumpResolutionAnalysis(ForwardAnalysis, Analysis):
     def __init__(self, cfg, status_callback=None, graph_visitor=None):
         if graph_visitor is None:
@@ -28,8 +53,8 @@ class StaticJumpResolutionAnalysis(ForwardAnalysis, Analysis):
 
         self._analyze()
 
-    def results_by_function(self, fn_addr):
-        states = {n: s for (n, s) in self._state_map.items() if n.function_address == fn_addr}
+    def results_for_function(self, fn_addr):
+        states = [BlockResults(self.kb.functions[fn_addr], n, s) for (n, s) in self._state_map.items() if n.function_address == fn_addr]
         return states
 
     def _pre_analysis(self):

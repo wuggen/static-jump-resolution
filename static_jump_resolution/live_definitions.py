@@ -128,5 +128,8 @@ class LiveDefinitions:
         self._defs = self._binop(other, operator.isub)
         return self
 
+    def __iter__(self):
+        return self._defs.__iter__()
+
     def copy(self):
         return LiveDefinitions(self.arch, self._defs.copy())
