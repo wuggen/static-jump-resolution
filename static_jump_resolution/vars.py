@@ -1,31 +1,10 @@
-class Atom:
-    __slots__ = []
+class Var:
+    __slots__ = tuple()
 
     def __repr__(self):
         raise NotImplementedError
 
-class Tmp(Atom):
-    """ An IR temporary variable.
-
-    :param idx: The temp index.
-
-    :ivar idx: The temp index.
-    """
-    __slots__ = ('idx',)
-
-    def __init__(self, idx):
-        self.idx = idx
-
-    def __eq__(self, other):
-        return type(other) is Tmp and self.idx == other.idx
-
-    def __hash__(self):
-        return hash(('Tmp', self.idx))
-
-    def __repr__(self):
-        return 't%d' % self.idx
-
-class Register(Atom):
+class Register(Var):
     """ An architecure register.
 
     Characterized by its offset in the register file and its size in bytes.
@@ -56,54 +35,56 @@ class Register(Atom):
         else:
             return "<Register %s>" % arch.translate_register_name(self.offset, self.size)
 
-class RegisterOffset(Atom):
-    """ A memory region characterized as an offset from a register.
+class StackVar(Var):
+    """ A function-local variable, characterized by an offset within a stack frame and a byte size.
 
-    :param Register reg: The base register.
+    The value of the stack pointer at the time a function begins execution is defined to be 0. Therefore,
+    negative offsets refer to variables defined within the body of the function, while positive offsets
+    refer to parameters passed on the stack.
+
+    :param fn: The function to which this variable is local.
     :param offset: The offset.
     :param size: The size of the region in bytes.
 
-    :ivar reg: The base register.
+    :ivar fn: The function to which this variable is local.
     :ivar offset: The offset.
     :ivar size: The size of the region in bytes.
     """
-    __slots__ = ('reg', 'offset', 'size')
+    __slots__ = ('fn', 'offset', 'size')
 
-    def __init__(self, reg, offset, size):
-        self.reg = reg
+    def __init__(self, fn, offset, size):
+        self.fn = fn
         self.offset = offset
         self.size = size
 
     def __eq__(self, other):
-        return type(other) is RegisterOffset and \
-                self.reg == other.reg and \
+        return type(other) is StackVar and \
+                self.fn == other.fn and \
                 self.offset == other.offset and \
                 self.size == other.size
 
     def __hash__(self):
-        return hash(('RegisterOffset', self.reg, self.offset))
+        return hash(('StackVar', self.fn, self.offset, self.size))
 
     def __repr__(self, arch=None):
-        return "<RegisterOffset %s(%s)>" % (self.reg.__repr__(arch), self.offset)
+        return "<StackVar %s(%s)>" % (self.reg.__repr__(arch), self.offset)
 
     def overlaps(self, other):
-        """ Determine wether two `RegisterOffset` regions overlap.
-
-        Assumes that two `RegisterOffset`s with different base registers do not overlap.
+        """ Determine whether two `StackVar` regions overlap.
 
         :param RegisterOffset other:
         """
-        return self.reg == other.reg and \
+        return self.fn == other.fn and \
                 self.offset < other.offset + other.size and \
                 other.offset < self.offset + self.size
 
-class MemoryLocation(Atom):
-    """ An arbitrary memory region characterized by address and size.
+class MemoryLocation(Var):
+    """ An arbitrary (non-local) memory region characterized by address and size.
 
-    :param addr: The start address of the region.
+    :param addr: The start address of the region. Usually an IR expression rather than an absolute address.
     :param size: The size of the region in bits.
 
-    :ivar addr: The start addr of the region.
+    :ivar addr: The start addr of the region. Usually an IR expression rather than an absolute address.
     :ivar size: The size of the region in bits.
     """
     __slots__ = ('addr', 'size')

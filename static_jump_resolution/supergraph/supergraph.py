@@ -5,14 +5,14 @@ from enum import Enum, auto
 class DummyNode:
     """ A dummy node in a supergraph, representing a call to or return from a procedure.
 
-    :param int parent_block: The parent (calling) block.
+    :param CFGNode parent_node: The parent (calling) node.
     :param str dummy_type:   The type (either 'Dummy_Call' or 'Dummy_Ret') of this dummy node.
     """
 
-    __slots__ = ['_parent_block', '_dummy_type']
+    __slots__ = ['_parent_node', '_dummy_type']
 
-    def __init__(self, parent_block, dummy_type):
-        self._parent_block = parent_block
+    def __init__(self, parent_node, dummy_type):
+        self._parent_node = parent_node
 
         if dummy_type not in ('Dummy_Call', 'Dummy_Ret'):
             raise ValueError("Expected 'Dummy_Call' or 'Dummy_Ret'")
@@ -20,20 +20,30 @@ class DummyNode:
         self._dummy_type = dummy_type
 
     @property
-    def parent_block(self):
-        return self._parent_block
+    def parent_node(self):
+        return self._parent_node
 
     @property
     def dummy_type(self):
         return self._dummy_type
 
+    @property
+    def call_addr(self):
+        """ The (executable) address of the call instruction corresponding to
+        this DummyNode.
+        """
+        return self._parent_node.instruction_addrs[-1]
+
     def __eq__(self, other):
         return type(other) is CallNode and \
-                self.parent_block == other.parent_block and \
+                self.parent_node == other.parent_node and \
                 self.dummy_type is other.dummy_type
 
     def __hash__(self):
-        hash(('DummyNode', self.parent_block, self.dummy_type))
+        hash(('DummyNode', self.parent_node, self.dummy_type))
+
+    def __repr__(self):
+        return "<%s (0x%x)>" % (self._dummy_type, self.call_addr)
 
 def supergraph_from_cfg(cfg):
     """ Construct a supergraph from a CFG analysis.
@@ -99,7 +109,7 @@ def supergraph_from_cfg(cfg):
 
         vex = n.block.vex
 
-        if vex.jumpkind is 'Ijk_Call':
+        if vex.jumpkind == 'Ijk_Call':
             # create dummy nodes
             callnode = DummyNode(n, 'Dummy_Call')
             retnode = DummyNode(n, 'Dummy_Ret')
@@ -112,19 +122,20 @@ def supergraph_from_cfg(cfg):
             # add edges
             supergraph.add_edge(n, callnode, jumpkind='Ijk_Boring')
 
-            for r in ret_targets:
-                supergraph.add_edge(retnode, r, jumpkind='Ijk_Boring')
+            for t in ret_targets:
+                supergraph.add_edge(retnode, t, jumpkind='Ijk_Boring')
 
             for t in call_targets:
                 supergraph.add_edge(callnode, t, jumpkind='Ijk_Call')
 
-            for r in fn_rets[n.function_address]:
-                supergraph.add_edge(r, retnode, jumpkind='Ijk_Ret')
+                for r in fn_rets[t.function_address]:
+                    supergraph.add_edge(r, retnode, jumpkind='Ijk_Ret')
 
-        # for non-call edges, simply copy over the old jumpkind
+        # for non-call, non-ret edges, simply copy over the old jumpkind
         else:
             successors = cfg.model.get_successors_and_jumpkind(n)
             for s, jk in successors:
-                supergraph.add_edge(n, s, jumpkind=jk)
+                if jk != "Ijk_Ret":
+                    supergraph.add_edge(n, s, jumpkind=jk)
 
     return supergraph

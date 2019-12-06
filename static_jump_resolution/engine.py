@@ -1,21 +1,73 @@
 from angr.engines.light import SimEngineLight, SimEngineLightVEXMixin
 
-from .live_definitions import LiveDefinitions, Definition
-from .atoms import Atom, Tmp, Register, RegisterOffset, MemoryLocation
+from .live_vars import LiveVars, QualifiedUse
+from .vars import Var, Register, StackVar, MemoryLocation
 
 import logging
-import pyvex.stmt as pyvex
-import pyvex.expr as pyvex
+import pyvex
 
 l = logging.getLogger(__name__)
 #l.setLevel(logging.DEBUG)
 
+def replace_tmps(expr, tmps):
+    """ Replace all IR temporaries in the given expression with their values in
+    the given bindings map.
+
+    :param IRExpr expr:
+    :param tmps: A mapping from temp indices to IRExpr values.
+    :rtype: IRExpr
+    """
+    if type(expr) is pyvex.IRExpr.RdTmp:
+        val = tmps.get(expr.tmp)
+        if val is None:
+            l.error("t%d not bound in the given map" % expr.tmp)
+            return expr
+        else:
+            return val
+
+    elif type(expr) is pyvex.IRExpr.GetI:
+        return pyvex.IRExpr.GetI(expr.descr, replace_tmps(expr.ix, tmps), expr.bias)
+    elif type(expr) in [pyvex.IRExpr.Qop, pyvex.IRExpr.Triop, pyvex.IRExpr.Binop, pyvex.IRExpr.Unop]:
+        return pyvex.IRExpr.Qop(expr.op, tuple(replace_tmps(e, tmps) for e in expr.args))
+    elif type(expr) is pyvex.IRExpr.Load:
+        return pyvex.IRExpr.Load(expr.end, expr.ty, replace_tmps(expr.addr, tmps))
+    elif type(expr) is pyvex.IRExpr.ITE:
+        return pyvex.IRExpr.ITE(
+                replace_tmps(expr.cond, tmps),
+                replace_tmps(expr.iffalse, tmps),
+                replace_tmps(expr.iftrue, tmps))
+    elif type(expr) is pyvex.IRExpr.CCall:
+        return pyvex.IRExpr.CCall(expr.retty, expr.cee,
+                tuple(replace_tmps(e, tmps) for e in expr.args))
+
+    else:
+        return expr
+
+def vars_modified(stmt, arch=None):
+    """ Get the set of variables modified by the given statement.
+
+    :param IRStmt stmt:
+    :param Arch arch: The guest architecture. If provided, used to create more
+        accurate results.
+    :rtype: Iterable of Var
+    """
+    if type(stmt) is pyvex.IRStmt.Put:
+        if arch is None or stmt.offset not in (arch.sp_offset, arch.bp_offset, arch.ip_offset):
+            return set(Register(stmt.offset, stmt.data.result_size(None)))
+        else:
+            return set()
+
+    elif type(stmt) is pyvex.IRStmt.Store:
+        # TODO: literally any of this
+        pass
+
 class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
     def __init__(self):
+        self._block_tmps = {}
         super(SimEngineSJRVEX, self).__init__()
 
     def _trace(self, name):
-        l.info('%s, self.state=%s' % (name, self.state))
+        l.debug('%s, self.state=%s' % (name, self.state))
 
     def process(self, state, *args, **kwargs):
         try:
@@ -26,12 +78,41 @@ class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
             l.error(e)
         return self.state
 
+    def _preprocess_block(self):
+        if self.block.addr in self._block_tmps:
+            return
+
+        tmps = {}
+
+        for stmt in self.block.vex.statements:
+            if type(stmt) is pyvex.IRStmt.WrTmp:
+                tmps[stmt.tmp] = replace_tmps(stmt.data, tmps)
+
+        self._block_tmps[self.block.addr] = tmps
+
+    def _process_Stmt(self, whiltelist=None):
+        if whitelist is not None:
+            whitelist = set(whitelist)
+
+        self._preprocess_block()
+
+        for (idx, stmt) in enumerate(reversed(self.block.vex.statements)):
+            if whitelist is not None and idx not in whitelist:
+                continue
+            self.stmt_idx = idx
+
+            if type(stmt) is pyvex.IRStmt.IMark:
+                self.ins_addr = stmt.addr + stmt.delta
+            elif type(stmt) is pyvex.IRStmt.WrTmp:
+                continue
+
+            self._handle_Stmt(stmt)
 
     def _process(self, new_state, successors, block=None, whitelist=None):
-        if type(new_state) is not LiveDefinitions:
-            raise TypeError('Expected LiveDefinitions, got %s' % type(live_defs))
+        if type(new_state) is not LiveVars:
+            raise TypeError('Expected LiveVars, got %s' % type(live_defs))
 
-        super(SimEngineSJRVEX, self)._process(new_state, None, block=block)
+        super(SimEngineSJRVEX, self)._process(new_state, None, block=block, whitelist=whitelist)
 
         return self.state
 
@@ -53,42 +134,8 @@ class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
         self.state.kill_and_gen_defs(Definition(memloc, self._codeloc()))
         self._trace('_handle_Store after')
 
-    def _subst_tmps(self, expr):
-        return expr
-        #if type(expr) is pyvex.RdTmp and expr.tmp in self.tmps:
-        #    return self._subst_tmps(self.tmps[expr.tmp])
-        #elif type(expr) is pyvex.Qop:
-        #    return pyvex.Qop(expr.op, [self._subst_tmps(e) for e in expr.args])
-        #elif type(expr) is pyvex.Triop:
-        #    return pyvex.Triop(expr.op, [self._subst_tmps(e) for e in expr.args])
-        #elif type(expr) is pyvex.Binop:
-        #    return pyvex.Binop(expr._op, [self._subst_tmps(e) for e in expr.args], expr.op_int)
-        #elif type(expr) is pyvex.Unop:
-        #    return pyvex.Unop(expr.op, [self._subst_tmps(e) for e in expr.args])
-        #elif type(expr) is pyvex.Load:
-        #    return pyvex.Load(expr.end, expr.ty, self._subst_tmps(expr.addr))
-        #elif type(expr) is pyvex.ITE:
-        #    return pyvex.ITE(
-        #            self._subst_tmps(expr.cond),
-        #            self._subst_tmps(expr.iftrue),
-        #            self._subst_tmps(expr.iffalse))
-        #else:
-        #    return expr
-
     def _handle_WrTmp(self, stmt):
-        self._trace("_handle_WrTmp before")
-        tmp = Tmp(stmt.tmp)
-        self.state.kill_and_gen_defs(Definition(tmp, self._codeloc()))
-        self._trace("_handle_WrTmp after")
+        pass
 
     def _handle_WrTmpData(self, tmp, data):
-        self._trace("_handle_WrTmpData before")
-        tmp = Tmp(tmp)
-        self.state.kill_and_gen_defs(Definition(tmp, self._codeloc()))
-        self._trace("_handle_WrTmpData after")
-
-    def _handle_Get(self, expr):
-        return self._subst_tmps(expr)
-
-    def _handle_Load(self, expr):
-        return self._subst_tmps(expr)
+        pass
