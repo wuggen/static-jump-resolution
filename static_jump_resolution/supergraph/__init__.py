@@ -257,7 +257,7 @@ class SupergraphVisitor(GraphVisitor):
             return exits
         else:
             # Fallback fallback: all nodes with a return
-            return [n for in in self._cfg.model.nodes() if n.has_return]
+            return [n for n in self._cfg.model.nodes() if n.has_return]
 
     def reset(self):
         self._worklist.clear()

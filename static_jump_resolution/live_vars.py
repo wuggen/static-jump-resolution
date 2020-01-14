@@ -1,6 +1,6 @@
 from angr.analyses.code_location import CodeLocation
 
-from .atoms import Atom, Tmp, Register, RegisterOffset, MemoryLocation
+from .vars import Var, Register, StackVar, MemoryLocation
 
 import operator
 import pyvex

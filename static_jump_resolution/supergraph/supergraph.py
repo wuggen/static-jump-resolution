@@ -35,12 +35,12 @@ class DummyNode:
         return self._parent_node.instruction_addrs[-1]
 
     def __eq__(self, other):
-        return type(other) is CallNode and \
+        return type(other) is DummyNode and \
                 self.parent_node == other.parent_node and \
-                self.dummy_type is other.dummy_type
+                self.dummy_type == other.dummy_type
 
     def __hash__(self):
-        hash(('DummyNode', self.parent_node, self.dummy_type))
+        return hash(('DummyNode', self.parent_node, self.dummy_type))
 
     def __repr__(self):
         return "<%s (0x%x)>" % (self._dummy_type, self.call_addr)
@@ -101,7 +101,9 @@ def supergraph_from_cfg(cfg):
         if n.has_return or n.is_simprocedure:
             fn_rets[addr].append(n)
 
-    # add edges
+    # add edges and create dummy nodes
+    dummy_nodes = []
+    dummy_edges = []
     for n in supergraph.nodes:
         # simprocedures are handled implicitly during call/return edge creation
         if n.is_simprocedure:
@@ -113,23 +115,24 @@ def supergraph_from_cfg(cfg):
             # create dummy nodes
             callnode = DummyNode(n, 'Dummy_Call')
             retnode = DummyNode(n, 'Dummy_Ret')
-            supergraph.add_nodes_from((callnode, retnode))
+            dummy_nodes.append(callnode)
+            dummy_nodes.append(retnode)
 
             # get call and return targets
             call_targets = cfg.model.get_successors(n, jumpkind='Ijk_Call')
             ret_targets = cfg.model.get_successors(n, excluding_fakeret=False, jumpkind='Ijk_FakeRet')
 
             # add edges
-            supergraph.add_edge(n, callnode, jumpkind='Ijk_Boring')
+            dummy_edges.append((n, callnode, {'jumpkind': 'Ijk_Boring'}))
 
             for t in ret_targets:
-                supergraph.add_edge(retnode, t, jumpkind='Ijk_Boring')
+                dummy_edges.append((retnode, t, {'jumpkind': 'Ijk_Boring'}))
 
             for t in call_targets:
-                supergraph.add_edge(callnode, t, jumpkind='Ijk_Call')
+                dummy_edges.append((callnode, t, {'jumpkind': 'Ijk_Call'}))
 
                 for r in fn_rets[t.function_address]:
-                    supergraph.add_edge(r, retnode, jumpkind='Ijk_Ret')
+                    dummy_edges.append((r, retnode, {'jumpkind': 'Ijk_Ret'}))
 
         # for non-call, non-ret edges, simply copy over the old jumpkind
         else:
@@ -137,5 +140,8 @@ def supergraph_from_cfg(cfg):
             for s, jk in successors:
                 if jk != "Ijk_Ret":
                     supergraph.add_edge(n, s, jumpkind=jk)
+
+    supergraph.add_nodes_from(dummy_nodes)
+    supergraph.add_edges_from(dummy_edges)
 
     return supergraph

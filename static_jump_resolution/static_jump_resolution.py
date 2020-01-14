@@ -2,7 +2,7 @@ from angr.analyses.analysis import Analysis
 from angr.analyses.forward_analysis import ForwardAnalysis
 
 from .engine import SimEngineSJRVEX
-from .live_definitions import LiveDefinitions
+from .live_vars import LiveVars
 from .supergraph import SupergraphVisitor, DummyNode
 
 import logging
@@ -67,7 +67,7 @@ class StaticJumpResolutionAnalysis(ForwardAnalysis, Analysis):
         pass
 
     def _initial_abstract_state(self, node):
-        return LiveDefinitions(self.project.arch)
+        return LiveVars(self.project.arch)
 
     def _run_on_node(self, node, state):
         state = state.copy()
@@ -81,10 +81,10 @@ class StaticJumpResolutionAnalysis(ForwardAnalysis, Analysis):
         l.info('Called _merge_states(%s, %s)' % \
                 (node, '[' + ', '.join(str(s) for s in states) + ']'))
 
-        state0 = self._state_map.get(node, LiveDefinitions(self.project.arch))
+        state0 = self._state_map.get(node, LiveVars(self.project.arch))
         merged = functools.reduce(operator.or_,
                 (s for s in states if s is not None),
-                LiveDefinitions(self.project.arch))
+                LiveVars(self.project.arch))
 
         if merged == state0:
             # Reached fixpoint
