@@ -29,7 +29,8 @@ def check_edges(bin_name, edges):
     'Ijk_Call', or 'Ijk_Ret'. When the source (resp. dest) node is a normal CFGNode, source (resp.
     dest) should be given as its start address. When it is a dummy node, it should be given as a
     pair of (parent_address, dummy_type), where parent_address is the start address of the parent
-    node and dummy_type is one of 'Dummy_Call' or 'Dummy_Ret'.
+    node and dummy_type is one of 'Dummy_Call' or 'Dummy_Ret'. When it is a simprocedure, it should
+    be given as the hooked symbol name.
 
     :param str bin_name: The path to the binary file under the tests/bin directory.
     :param list edges: A list of (source, dest, jumpkind) edges.
@@ -50,12 +51,16 @@ def check_edges(bin_name, edges):
             par_addr, dummy_type = nodedef
             parent = nodes[par_addr + base_addr]
             return DummyNode(parent, dummy_type)
+        elif type(nodedef) is str:
+            return nodes[proj.loader.find_symbol(nodedef).rebased_addr]
         else:
             return None
 
     def def_from_node(node):
         if type(node) is DummyNode:
             return (node.parent_node.addr - base_addr, node.dummy_type)
+        elif node.is_simprocedure:
+            return node.name
         else:
             return node.addr - base_addr
 
@@ -64,6 +69,8 @@ def check_edges(bin_name, edges):
             return "0x%x" % nodedef
         elif type(nodedef) is tuple:
             return "(0x%x, %s)" % nodedef
+        elif type(nodedef) is str:
+            return nodedef
         else:
             return None
 
@@ -119,6 +126,22 @@ def test_multiple_returns():
         ((0x12, 'Dummy_Ret'), 0x19, 'Ijk_Boring'),
         (0x19, 0x1b, 'Ijk_Boring')
         ]
+    check_edges(filename, edges)
+
+def test_simprocs():
+    filename = "simprocs.o"
+    edges = [
+        (0x0, 0x9, 'Ijk_Boring'),
+        (0x0, 0x13, 'Ijk_Boring'),
+        (0x9, (0x9, 'Dummy_Call'), 'Ijk_Boring'),
+        ((0x9, 'Dummy_Call'), 'exit', 'Ijk_Call'),
+        ('exit', (0x9, 'Dummy_Ret'), 'Ijk_Ret'),
+        ((0x9, 'Dummy_Ret'), 0x13, 'Ijk_Boring'),
+        (0x13, (0x13, 'Dummy_Call'), 'Ijk_Boring'),
+        ((0x13, 'Dummy_Call'), 'puts', 'Ijk_Call'),
+        ('puts', (0x13, 'Dummy_Ret'), 'Ijk_Ret'),
+        ((0x13, 'Dummy_Ret'), 0x1c, 'Ijk_Boring')
+    ]
     check_edges(filename, edges)
 
 if __name__ == '__main__':
