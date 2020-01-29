@@ -1,10 +1,15 @@
 from angr.analyses.code_location import CodeLocation
 
 from .context import CtxRecord, CallString
-from .vars import Var, Register, StackVar, MemoryLocation
+from .vars import Var, Register, StackVar, MemoryLocation, memory_location, get_type_size_bytes
 
 import operator
+from functools import reduce
+
 import pyvex
+import logging
+
+l = logging.getLogger(__name__)
 
 class VarUse:
     """ A use of a variable at a particular program point.
@@ -199,3 +204,71 @@ class LiveVars:
     def copy(self):
         """ Get a shallow copy of this LiveUses. """
         return LiveUses(self.arch, self._uses.copy())
+
+def vars_modified(stmt, ctx, arch=None):
+    """ Get the set of variables modified by the given statement.
+
+    :param IRStmt stmt:
+    :param ExecutionCtx ctx: The current execution context.
+    :param Arch arch: The guest architecture. If provided, used to create more accurate results.
+    :rtype: Iterable of Var
+    """
+    if type(stmt) is pyvex.IRStmt.Put:
+        if arch is None or stmt.offset not in (arch.sp_offset, arch.bp_offset, arch.ip_offset):
+            return { Register(stmt.offset, get_type_size_bytes(stmt.data.result_type(None))) }
+        else:
+            return set()
+
+    elif type(stmt) is pyvex.IRStmt.Store:
+        ty = stmt.data.result_type(None)
+        return { memory_location(stmt.addr, ctx, arch, ty) }
+
+    else:
+        l.warning("[vars_modified] Unimplemented for statement type %s" % type(stmt))
+        return set()
+
+def vars_used_expr(expr, ctx, arch=None):
+    """ Get the set of variables whose values are used in the given expression.
+
+    :param IRExpr stmt:
+    :param ExecutionCtx ctx:
+    :param Arch arch: The guest architecture. If provided, used to create more accurate results.
+    :rtype: Iterable of Var
+    """
+    recurse = lambda e: vars_used_expr(e, ctx, arch)
+
+    if type(expr) is pyvex.IRExpr.Get \
+            and expr.offset not in [arch.sp_offset, arch.bp_offset]:
+        return { Register(expr.offset, get_type_size_bytes(expr.ty)) }
+
+    elif type(expr) is pyvex.IRExpr.Load:
+        return { memory_location(expr.addr, ctx, arch, expr.ty) } | recurse(expr.addr)
+
+    elif type(expr) in [pyvex.IRExpr.Unop, pyvex.IRExpr.Binop, pyvex.IRExpr.Triop, pyvex.IRExpr.Qop]:
+        return reduce(operator.or_, (recurse(e) for e in expr.args))
+
+    elif type(expr) is pyvex.IRExpr.ITE:
+        return recurse(expr.cond) | recurse(expr.iffalse) | recurse(expr.iftrue)
+
+    else:
+        return set()
+
+def vars_used(stmt, ctx, arch=None):
+    """ Get the set of variables whose values are used by the given statement.
+
+    :param IRStmt stmt:
+    :param ExecutionCtx ctx:
+    :param Arch arch: The guest architecture. If provided, used to create more accurate results.
+    :rtype: Iterable of Var
+    """
+    from_expr = lambda e: vars_used_expr(e, ctx, arch)
+
+    if type(stmt) is pyvex.IRStmt.Put:
+        return from_expr(stmt.data)
+
+    elif type(stmt) is pyvex.IRStmt.Store:
+        return from_expr(stmt.addr) | from_expr(stmt.data)
+
+    else:
+        l.warning("[vars_used] unimplemented for statement type %s" % type(stmt))
+        return set()

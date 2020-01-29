@@ -33,8 +33,13 @@ class CtxRecord:
 
     @property
     def call_addr(self):
-        """ The address of the call instruction associated with this record.  """
+        """ The address of the call instruction associated with this record. """
         return self._node.call_addr
+
+    @property
+    def fn_addr(self):
+        """ The address of the function associated with this record. """
+        return self._node.fn_addr
 
     def __eq__(self, other):
         """ For the purposes of equality testing, the values of the stack and base pointers are
@@ -167,18 +172,19 @@ class CallString:
         return "<CallString [" ++ prefix ++ ", ".join([r.__repr__() for r in records]) ++ "]>"
 
 class ExecutionCtx:
-    """ An execution context, consisting of the currently executing function, a call string, and
-    current values of the stack and base pointers.
+    """ An execution context, consisting of the address of the currently
+    executing function, a call string, and current values of the stack and base
+    pointers.
     """
-    def __init__(self, fn, sp, bp, callstring):
-        self._fn = fn
+    def __init__(self, fn_addr, sp, bp, callstring):
+        self._fn_addr = fn_addr
         self._sp = sp
         self._bp = bp
         self._callstring = callstring
 
     @property
-    def fn(self):
-        return self._fn
+    def fn_addr(self):
+        return self._fn_addr
 
     @property
     def stack_ptr(self):
@@ -193,11 +199,16 @@ class ExecutionCtx:
         return self._callstring
 
     def __eq__(self, other):
-        return self._fn.addr == other._fn.addr \
+        if other is self:
+            return True
+        if type(other) is not ExecutionCtx:
+            return False
+
+        return self._fn_addr == other._fn_addr \
             and self._sp == other._sp \
             and self._bp == other._bp \
             and self._callstring == other._callstring
 
     def __repr__(self):
         return "<ExecutionCtx [%d] 0x%x sp=%d bp=%d>" \
-                % (len(self._callstring), self._fn.addr, self._sp, self._bp)
+                % (len(self._callstring), self._fn_addr, self._sp, self._bp)

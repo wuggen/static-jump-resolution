@@ -1,17 +1,16 @@
 from angr.engines.light import SimEngineLight, SimEngineLightVEXMixin
 
 from .context import ExecutionCtx
-from .live_vars import LiveVars, QualifiedUse
-from .vars import Var, Register, StackVar, MemoryLocation
+from .live_vars import LiveVars, QualifiedUse, vars_modified, vars_used
+from .vars import Var, Register, StackVar, MemoryLocation, memory_location, get_type_size_bytes
+
+from functools import reduce
+import operator
 
 import pyvex
-from pyvex.const import get_type_size
-
-import operator
 import logging
 
 l = logging.getLogger(__name__)
-#l.setLevel(logging.DEBUG)
 
 def replace_tmps(expr, tmps):
     """ Replace all IR temporaries in the given expression with their values in
@@ -51,86 +50,6 @@ def replace_tmps(expr, tmps):
 
     else:
         return expr
-
-def stack_var(expr, ctx, arch):
-    """ If the expression is an offset from the stack or base pointer, convert it to the
-    corresponding StackVar. Otherwise, return None.
-
-    :param IRExpr expr:
-    :param ExecutionCtx ctx:
-    :param Arch arch:
-    :rtype: StackVar or None
-    """
-    if arch is None:
-        return None
-
-    if type(expr) is not pyvex.IRExpr.Load:
-        return None
-
-    size = get_type_size(expr.ty)
-    addr = expr.addr
-
-    if type(addr) is pyvex.IRExpr.Get:
-        if addr.offset == arch.sp_offset:
-            return StackVar(ctx.fn, ctx.stack_ptr, size)
-        elif addr.offset == arch.bp_offset:
-            return StackVar(ctx.fn, ctx.base_ptr, size)
-        else:
-            return None
-
-    elif type(addr) is pyvex.IRExpr.Binop:
-        if not any(type(e) is pyvex.IRExpr.Get for e in addr.args):
-            return None
-        if not any(type(e) is pyvex.IRExpr.Const for e in addr.args):
-            return None
-
-        if addr.op in ('Iop_Add8', 'Iop_Add16', 'Iop_Add32', 'Iop_Add64'):
-            op = operator.add_
-        elif addr.op in ('Iop_Sub8', 'Iop_Sub16', 'Iop_Sub32', 'Iop_Sub64'):
-            op = operator.sub_
-        else:
-            return None
-
-        (reg, offset) = (addr.args[0], addr.args[1]) \
-                if type(addr.args[0]) is pyvex.IRExpr.Get \
-                else (addr.args[1], addr.args[0])
-
-        if reg.offset == arch.sp_offset:
-            return StackVar(ctx.fn, op(ctx.stack_ptr, offset.value), size)
-        elif reg.offset == arch.bp_offset:
-            return StackVar(ctx.fn, op(ctx.base_ptr, offset.value), size)
-        else:
-            return None
-
-    else:
-        return None
-
-def vars_modified(stmt, ctx, arch=None):
-    """ Get the set of variables modified by the given statement.
-
-    :param IRStmt stmt:
-    :param ExecutionCtx ctx: The current execution context.
-    :param Arch arch: The guest architecture. If provided, used to create more accurate results.
-    :rtype: Iterable of Var
-    """
-    if type(stmt) is pyvex.IRStmt.Put:
-        if arch is None or stmt.offset not in (arch.sp_offset, arch.bp_offset, arch.ip_offset):
-            return set(Register(stmt.offset, stmt.data.result_size(None)))
-        else:
-            return set()
-
-    elif type(stmt) is pyvex.IRStmt.Store:
-        # TODO: lol still all of this
-        pass
-
-def vars_used(stmt, arch=None):
-    """ Get the set of variables whose values are used by the given statement.
-
-    :param IRStmt stmt:
-    :param Arch arch: The guest architecture. If provided, used to create more accurate results.
-    :rtype: Iterable of Var
-    """
-    pass
 
 class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
     def __init__(self):

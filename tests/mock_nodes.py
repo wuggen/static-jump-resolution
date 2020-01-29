@@ -3,13 +3,18 @@ from angr.analyses.code_location import CodeLocation
 from static_jump_resolution.supergraph import DummyNode
 from static_jump_resolution.live_vars import VarUse
 from static_jump_resolution.vars import Register
+from static_jump_resolution.context import CtxRecord, CallString, ExecutionCtx
+
+DEFAULT_SP = -24
+DEFAULT_BP = -8
 
 class CFGNode:
-    """ A fake CFGNode class that contains only the information needed directly by the live_vars
-    classes. """
+    """ A fake CFGNode class that contains only the information needed directly by the test suite.
+    """
 
-    def __init__(self, addr):
+    def __init__(self, addr, fn_addr):
         self.addr = addr
+        self.function_address = fn_addr
 
     @property
     def instruction_addrs(self):
@@ -34,7 +39,7 @@ def arbitrary_call_nodes(num=1):
     :param int num: The length of the list to generate.
     :return: list of DummyNode call nodes.
     """
-    return [DummyNode(CFGNode(addr), 'Dummy_Call') for addr in range(0,num)]
+    return [DummyNode(CFGNode(addr, addr), 'Dummy_Call') for addr in range(0,num)]
 
 def arbitrary_vars(num=1):
     """ Get a list of arbitrary, unique variables.
@@ -42,7 +47,7 @@ def arbitrary_vars(num=1):
     :param int num: The length of the list to generate.
     :return: list of (subclasses of) Var.
     """
-    return [Register(-offset) for offset in range(0,num)]
+    return [Register(-offset, 1) for offset in range(0,num)]
 
 def arbitrary_var_uses(vars, num=1):
     """ Get a collection of uses of the given variables, with arbitrary unique addresses.
@@ -51,3 +56,36 @@ def arbitrary_var_uses(vars, num=1):
     :return: dict mapping variables to a list of their uses.
     """
     return {var: [VarUse(var, CodeLocation(addr, 0)) for addr in range(0, num)] for var in vars}
+
+def arbitrary_records(num=1):
+    """ Get a list of fake context records with arbitrary, unique addresses. The stack and base
+    pointer values of each record are DEFAULT_SP and DEFAULT_BP respectively.
+
+    :param int num: The length of the list to generate.
+    :return: list of CtxRecord, referencing fake call nodes.
+    """
+    nodes = arbitrary_call_nodes(num)
+    return [CtxRecord(node, DEFAULT_SP, DEFAULT_BP) for node in nodes]
+
+def arbitrary_call_string(num=1):
+    """ Get a call string of length `num` of arbitrary, unique context records. The stack and base
+    pointer values of each record are DEFAULT_SP and DEFAULT_BP respectively.
+
+    :param int num:
+    :return: CallString
+    """
+    return CallString(arbitrary_records(num))
+
+def arbitrary_context(num=1):
+    """ Get an arbitrary ExecutionCtx.
+
+    The returned context will have a record stack of length num, including the current function.
+    The current context and each record in the call string will have stack and base pointer values
+    of DEFAULT_SP and DEFAULT_BP respectively.
+
+    :param int num:
+    :rtype: ExecutionCtx
+    """
+    records = arbitrary_records(num)
+
+    return ExecutionCtx(records[-1].fn_addr, DEFAULT_SP, DEFAULT_BP, CallString(records[:-1]))

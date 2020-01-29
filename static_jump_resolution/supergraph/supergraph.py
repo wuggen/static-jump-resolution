@@ -29,10 +29,15 @@ class DummyNode:
 
     @property
     def call_addr(self):
-        """ The (executable) address of the call instruction corresponding to
-        this DummyNode.
+        """ The (executable) address of the call instruction corresponding to this DummyNode.
         """
         return self._parent_node.instruction_addrs[-1]
+
+    @property
+    def fn_addr(self):
+        """ The start address of the function containing this DummyNode's associated call site.
+        """
+        return self._parent_node.function_address
 
     def __eq__(self, other):
         return type(other) is DummyNode and \
