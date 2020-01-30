@@ -13,8 +13,8 @@ import logging
 l = logging.getLogger(__name__)
 
 def replace_tmps(expr, tmps):
-    """ Replace all IR temporaries in the given expression with their values in
-    the given bindings map.
+    """ Recursively replace all IR temporaries in the given expression with their values in the
+    given bindings map.
 
     :param IRExpr expr:
     :param tmps: A mapping from temp indices (int) to IRExpr values.
@@ -26,14 +26,11 @@ def replace_tmps(expr, tmps):
             l.error("[replace_tmps] t%d not bound in the given map" % expr.tmp)
             return expr
         else:
-            return val
-
-    elif type(expr) is pyvex.IRExpr.GetI:
-        return pyvex.IRExpr.GetI(expr.descr, replace_tmps(expr.ix, tmps), expr.bias)
+            return replace_tmps(val, tmps)
 
     elif type(expr) in \
             (pyvex.IRExpr.Qop, pyvex.IRExpr.Triop, pyvex.IRExpr.Binop, pyvex.IRExpr.Unop):
-        return pyvex.IRExpr.Qop(expr.op, tuple(replace_tmps(e, tmps) for e in expr.args))
+        return type(expr)(expr.op, tuple(replace_tmps(e, tmps) for e in expr.args))
 
     elif type(expr) is pyvex.IRExpr.Load:
         return pyvex.IRExpr.Load(expr.end, expr.ty, replace_tmps(expr.addr, tmps))
@@ -48,7 +45,11 @@ def replace_tmps(expr, tmps):
         return pyvex.IRExpr.CCall(expr.retty, expr.cee,
                 tuple(replace_tmps(e, tmps) for e in expr.args))
 
+    elif type(expr) in [pyvex.IRExpr.Get, pyvex.IRExpr.Const]:
+        return expr
+
     else:
+        l.warning("[replace_tmps] Unimplemented for IRExpr type %s" % type(expr))
         return expr
 
 class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
