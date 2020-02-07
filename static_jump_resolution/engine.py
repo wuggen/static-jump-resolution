@@ -1,7 +1,7 @@
 from angr.engines.light import SimEngineLight, SimEngineLightVEXMixin
 
 from .context import ExecutionCtx
-from .live_vars import LiveVars, QualifiedUse, vars_modified, vars_used
+from .live_vars import LiveVars, QualifiedLiveSet, vars_modified, vars_used
 from .vars import Var, Register, StackVar, MemoryLocation, memory_location, get_type_size_bytes
 
 from functools import reduce
@@ -45,20 +45,30 @@ def replace_tmps(expr, tmps):
         return pyvex.IRExpr.CCall(expr.retty, expr.cee,
                 tuple(replace_tmps(e, tmps) for e in expr.args))
 
-    elif type(expr) in [pyvex.IRExpr.Get, pyvex.IRExpr.Const]:
+    else:
+        if type(expr) not in [pyvex.IRExpr.Get, pyvex.IRExpr.Const]:
+            l.warning("[replace_tmps] Unimplemented for IRExpr type %s" % type(expr))
         return expr
 
-    else:
-        l.warning("[replace_tmps] Unimplemented for IRExpr type %s" % type(expr))
-        return expr
+def is_indirect_jump(block):
+    """ Determine whether the given block ends in an indirect jump, and if so return its target
+    expression.
+
+    :param angr.Block block:
+    """
+    if block.vex.jumpkind not in ['Ijk_Boring', 'Ijk_Call']:
+        return False
+
+    return not type(block.vex.next) is pyvex.IRExpr.Const
 
 class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
     def __init__(self):
         self._block_tmps = {}
+        self._block_spbp = {}
         super(SimEngineSJRVEX, self).__init__()
 
     def _trace(self, name):
-        l.debug('%s, self.state=%s' % (name, self.state))
+        self.l.debug('%s, self.state=%s' % (name, self.state))
 
     def process(self, state, *args, **kwargs):
         try:
@@ -66,7 +76,7 @@ class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
         except SimEngineError as e:
             if kwargs.pop('fail_fast', False):
                 raise e
-            l.error(e)
+            self.l.error(e)
         return self.state
 
     def _preprocess_block(self):
@@ -81,7 +91,7 @@ class SimEngineSJRVEX(SimEngineLightVEXMixin, SimEngineLight):
 
         self._block_tmps[self.block.addr] = tmps
 
-    def _process_Stmt(self, whiltelist=None):
+    def _process_Stmt(self, whitelist=None):
         if whitelist is not None:
             whitelist = set(whitelist)
 

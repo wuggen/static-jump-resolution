@@ -211,9 +211,9 @@ class SupergraphVisitor(GraphVisitor):
 
     def __init__(self, cfg, direction='forward'):
         if type(direction) is not str:
-            raise TypeError
+            raise TypeError()
         if direction not in ('forward', 'backward'):
-            raise ValueError
+            raise ValueError()
 
         self._cfg = cfg
         self._direction = direction

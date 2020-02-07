@@ -89,7 +89,7 @@ class CallString:
 
     @property
     def stack(self):
-        """ A shallow copy of the internal record list, most recent call last. """
+        """ A shallow copy of the internal record stack as a list, most recent call last. """
         return [n for n in self._records]
 
     def __eq__(self, other):
@@ -155,6 +155,10 @@ class CallString:
 
         return True
 
+    def copy(self):
+        """ Get a shallow copy of this CallString. """
+        return CallString(self._records)
+
     def __hash__(self):
         return hash(("CallString", tuple(self._records)))
 
@@ -172,31 +176,20 @@ class CallString:
         return "<CallString [" ++ prefix ++ ", ".join([r.__repr__() for r in records]) ++ "]>"
 
 class ExecutionCtx:
-    """ An execution context, consisting of the address of the currently
-    executing function, a call string, and current values of the stack and base
-    pointers.
+    """ An execution context, consisting of the address of the currently executing function and
+    current values of the stack and base pointers.
     """
-    def __init__(self, fn_addr, sp, bp, callstring):
-        self._fn_addr = fn_addr
-        self._sp = sp
-        self._bp = bp
-        self._callstring = callstring
+    __slots__ = ['fn_addr', 'sp', 'bp']
 
-    @property
-    def fn_addr(self):
-        return self._fn_addr
-
-    @property
-    def stack_ptr(self):
-        return self._sp
-
-    @property
-    def base_ptr(self):
-        return self._bp
-
-    @property
-    def callstring(self):
-        return self._callstring
+    def __init__(self, fn_addr, sp, bp):
+        """
+        :param int fn_addr:
+        :param int sp:
+        :param int bp:
+        """
+        self.fn_addr = fn_addr
+        self.sp = sp
+        self.bp = bp
 
     def __eq__(self, other):
         if other is self:
@@ -206,9 +199,7 @@ class ExecutionCtx:
 
         return self._fn_addr == other._fn_addr \
             and self._sp == other._sp \
-            and self._bp == other._bp \
-            and self._callstring == other._callstring
+            and self._bp == other._bp
 
     def __repr__(self):
-        return "<ExecutionCtx [%d] 0x%x sp=%d bp=%d>" \
-                % (len(self._callstring), self._fn_addr, self._sp, self._bp)
+        return "<ExecutionCtx 0x%x sp=%d bp=%d>" % (self._fn_addr, self._sp, self._bp)

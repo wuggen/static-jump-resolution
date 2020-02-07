@@ -107,6 +107,6 @@ def assert_vex_eq(vex1, vex2):
     elif isinstance(vex1, pyvex.stmt.IRStmt):
         test = stmt_eq
     else:
-        raise TypeError
+        raise TypeError()
 
     nt.ok_(test(vex1, vex2), "[assert_vex_eq] Objects compare unequal: %s != %s" % (str(vex1), str(vex2)))

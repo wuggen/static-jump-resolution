@@ -76,16 +76,12 @@ def arbitrary_call_string(num=1):
     """
     return CallString(arbitrary_records(num))
 
-def arbitrary_context(num=1):
+def arbitrary_context():
     """ Get an arbitrary ExecutionCtx.
 
-    The returned context will have a record stack of length num, including the current function.
-    The current context and each record in the call string will have stack and base pointer values
-    of DEFAULT_SP and DEFAULT_BP respectively.
+    The returned context will have stack and base pointer values of DEFAULT_SP and DEFAULT_BP
+    respectively, and an arbitrary function address.
 
-    :param int num:
     :rtype: ExecutionCtx
     """
-    records = arbitrary_records(num)
-
-    return ExecutionCtx(records[-1].fn_addr, DEFAULT_SP, DEFAULT_BP, CallString(records[:-1]))
+    return ExecutionCtx(128, DEFAULT_SP, DEFAULT_BP)

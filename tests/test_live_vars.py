@@ -10,7 +10,7 @@ import pyvex
 import archinfo
 
 from static_jump_resolution.context import CallString
-from static_jump_resolution.live_vars import QualifiedUse, vars_modified, vars_used
+from static_jump_resolution.live_vars import QualifiedLiveSet, vars_modified, vars_used
 from static_jump_resolution.vars import Register, StackVar, MemoryLocation
 
 amd64 = archinfo.ArchAMD64()
@@ -25,14 +25,14 @@ def test_qualified_use_represent():
     cs1 = CallString(nodes[:1])
     cs2 = CallString(nodes)
 
-    quse1 = QualifiedUse(uses[vars[0]][0], cs1)
-    quse2 = QualifiedUse(uses[vars[0]][0], cs2)
-    nt.ok_(quse1.can_represent(quse2))
-    nt.ok_(not quse2.can_represent(quse1))
+    liveset1 = QualifiedLiveSet(cs1, { uses[vars[0]][0] })
+    liveset2 = QualifiedLiveSet(cs2, { uses[vars[0]][0] })
+    nt.ok_(liveset1.can_represent(liveset2))
+    nt.ok_(not liveset2.can_represent(liveset1))
 
-    quse1 = QualifiedUse(uses[vars[1]][0], cs1)
-    nt.ok_(not quse1.can_represent(quse2))
-    nt.ok_(not quse2.can_represent(quse1))
+    liveset1.uses |= { uses[vars[1]][0] }
+    nt.ok_(not liveset1.can_represent(liveset2))
+    nt.ok_(not liveset2.can_represent(liveset1))
 
 def test_vars_modified_store():
     ctx = arbitrary_context()

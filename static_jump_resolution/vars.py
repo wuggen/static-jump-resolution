@@ -10,7 +10,7 @@ class Var:
     __slots__ = tuple()
 
     def __repr__(self):
-        raise NotImplementedError
+        raise NotImplementedError()
 
 class Register(Var):
     """ An architecure register.
@@ -130,9 +130,9 @@ def stack_var(addr, ctx, arch, ty):
     # Either a direct dereference of the SP/BP...
     if type(addr) is pyvex.IRExpr.Get:
         if addr.offset == arch.sp_offset:
-            return StackVar(ctx.fn_addr, ctx.stack_ptr, size)
+            return StackVar(ctx.fn_addr, ctx.sp, size)
         elif addr.offset == arch.bp_offset:
-            return StackVar(ctx.fn_addr, ctx.base_ptr, size)
+            return StackVar(ctx.fn_addr, ctx.bp, size)
         else:
             return None
 
@@ -157,9 +157,9 @@ def stack_var(addr, ctx, arch, ty):
                 else (addr.args[1], addr.args[0])
 
         if reg.offset == arch.sp_offset:
-            return StackVar(ctx.fn_addr, op(ctx.stack_ptr, offset.con.value), size)
+            return StackVar(ctx.fn_addr, op(ctx.sp, offset.con.value), size)
         elif reg.offset == arch.bp_offset:
-            return StackVar(ctx.fn_addr, op(ctx.base_ptr, offset.con.value), size)
+            return StackVar(ctx.fn_addr, op(ctx.bp, offset.con.value), size)
         else:
             return None
 
