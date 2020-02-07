@@ -75,7 +75,7 @@ class QualifiedLiveSet:
         return QualifiedLiveSet(self.ctx.copy(), self.uses)
 
     def __eq__(self, other):
-        return self.vars == other.vars and self.ctx == other.ctx
+        return self.uses == other.uses and self.ctx == other.ctx
 
     def __hash__(self):
         return hash(("QualifiedVars", self.vars, self.ctx))

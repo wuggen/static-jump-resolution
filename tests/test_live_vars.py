@@ -17,7 +17,7 @@ amd64 = archinfo.ArchAMD64()
 sp = amd64.sp_offset
 bp = amd64.bp_offset
 
-def test_qualified_use_represent():
+def test_qualified_live_set_represent():
     nodes = arbitrary_call_nodes(2)
     vars = arbitrary_vars(2)
     uses = arbitrary_var_uses(vars, 1)
@@ -33,6 +33,32 @@ def test_qualified_use_represent():
     liveset1.uses |= { uses[vars[1]][0] }
     nt.ok_(not liveset1.can_represent(liveset2))
     nt.ok_(not liveset2.can_represent(liveset1))
+
+def test_qualified_live_set_gen_uses():
+    cs = arbitrary_call_string(2)
+    vars = arbitrary_vars(4)
+    uses1 = arbitrary_var_uses(vars[:2], 1)
+    uses2 = arbitrary_var_uses(vars[2:], 1)
+
+    liveset = QualifiedLiveSet(cs, (u for us in uses1.values() for u in us))
+    gen_set = [u for us in uses2.values() for u in us]
+    expected = QualifiedLiveSet(cs, \
+            (u for us in list(uses1.values()) + list(uses2.values()) for u in us))
+
+    liveset.gen_uses(*gen_set)
+    nt.eq_(liveset, expected)
+
+def test_qualified_live_set_kill_vars():
+    cs = arbitrary_call_string(2)
+    vars = arbitrary_vars(2)
+    uses = arbitrary_var_uses(vars, 2)
+
+    liveset = QualifiedLiveSet(cs, (u for us in uses.values() for u in us))
+    kill = vars[0]
+    expected = QualifiedLiveSet(cs, uses[vars[1]])
+
+    liveset.kill_vars(kill)
+    nt.eq_(liveset, expected)
 
 def test_vars_modified_store():
     ctx = arbitrary_context()
