@@ -45,7 +45,7 @@ def test_qualified_live_set_gen_uses():
     expected = QualifiedLiveSet(cs, \
             (u for us in list(uses1.values()) + list(uses2.values()) for u in us))
 
-    liveset.gen_uses(*gen_set)
+    liveset.gen_uses(gen_set)
     nt.eq_(liveset, expected)
 
 def test_qualified_live_set_kill_vars():
@@ -57,7 +57,7 @@ def test_qualified_live_set_kill_vars():
     kill = vars[0]
     expected = QualifiedLiveSet(cs, uses[vars[1]])
 
-    liveset.kill_vars(kill)
+    liveset.kill_vars([kill])
     nt.eq_(liveset, expected)
 
 def test_vars_modified_store():

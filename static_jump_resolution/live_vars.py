@@ -7,6 +7,7 @@ import operator
 from functools import reduce
 
 import pyvex
+from pyvex import IRExpr, IRStmt
 import logging
 
 l = logging.getLogger(__name__)
@@ -57,16 +58,16 @@ class QualifiedLiveSet:
         """
         return self.uses == other.uses and self.ctx.can_represent(other.ctx)
 
-    def gen_uses(self, *uses):
+    def gen_uses(self, uses):
         """
-        :param *VarUse uses: `VarUse`s to add to the live set.
+        :param uses: Iterable of `VarUse`s to add to the live set.
         """
         self.uses |= set(uses)
 
-    def kill_vars(self, *vars):
+    def kill_vars(self, vars):
         """ Kill (remove all uses of) variables from the live set.
 
-        :param *Var vars: `Var`s to kill.
+        :param vars: Iterable of `Var`s to kill.
         """
         self.uses = set(u for u in self.uses if u.var not in vars)
 
@@ -78,7 +79,7 @@ class QualifiedLiveSet:
         return self.uses == other.uses and self.ctx == other.ctx
 
     def __hash__(self):
-        return hash(("QualifiedVars", self.vars, self.ctx))
+        return hash(("QualifiedLiveSet", *sorted(list(self.uses)), self.ctx))
 
     def __repr__(self):
         if len(self.ctx) > 4:
@@ -88,68 +89,7 @@ class QualifiedLiveSet:
             displayed_ctx = ['0x%x' % n.call_addr for n in self.ctx.stack]
             displayed_ctx = '(' + ', '.join(displayed_ctx) + ')'
 
-        return "<QualifiedUse %s %s>" % (displayed_ctx, self.vars)
-
-    #def __len__(self):
-    #    return len(self._livesets)
-
-    #def __iter__(self):
-    #    return iter(self._livesets)
-
-    #def __contains__(self, item):
-    #    return item in self._livesets
-
-    #def _binop(self, other, op):
-    #    if type(other) is LiveUses:
-    #        return op(self._uses, other._uses)
-    #    else:
-    #        raise NotImplementedError()
-
-    #def __and__(self, other):
-    #    return LiveUses(self.arch, self._binop(other, operator.and_))
-
-    #def __or__(self, other):
-    #    return LiveUses(self.arch, self._binop(other, operator.or_))
-
-    #def __xor__(self, other):
-    #    return LiveUses(self.arch, self._binop(other, operator.xor))
-
-    #def __sub__(self, other):
-    #    return LiveUses(self.arch, self._binop(other, operator.or_))
-
-    #def __le__(self, other):
-    #    return self._binop(other, operator.le)
-
-    #def __lt__(self, other):
-    #    return self._binop(other, operator.lt)
-
-    #def __ge__(self, other):
-    #    return self._binop(other, operator.ge)
-
-    #def __gt__(self, other):
-    #    return self._binop(other, operator.gt)
-
-    #def __eq__(self, other):
-    #    return self._binop(other, operator.eq)
-
-    #def __iand__(self, other):
-    #    self._uses = self._binop(other, operator.iand)
-    #    return self
-
-    #def __ior__(self, other):
-    #    self._uses = self._binop(other, operator.ior)
-    #    return self
-
-    #def __ixor__(self, other):
-    #    self._uses = self._binop(other, operator.ixor)
-    #    return self
-
-    #def __isub__(self, other):
-    #    self._uses = self._binop(other, operator.isub)
-    #    return self
-
-    #def __iter__(self):
-    #    return self._uses.__iter__()
+        return "<QualifiedLiveSet %s %s>" % (displayed_ctx, self.uses)
 
 class LiveVars:
     """ The per-node state of an interprocedural live variables analysis. Contains sets of live
@@ -180,6 +120,10 @@ class LiveVars:
             self._livesets = { QualifiedLiveSet(CallString()) }
         else:
             self._livesets = set(uses)
+
+    @property
+    def livesets(self):
+        return self._livesets
 
     def unqualified_uses(self):
         """ Aggregate all variable uses in all contexts into a single set, discarding their
@@ -229,6 +173,45 @@ class LiveVars:
         return set(QualifiedLiveSet(liveset.copy(), ls.ctx) for ls in self._livesets if \
                 liveset.ctx.can_represent(ls.ctx))
 
+    def gen_uses(self, uses):
+        """
+        :param uses: Iterable of `VarUse`s to add to all live sets.
+        """
+        new_livesets = set()
+
+        for liveset in self.livesets:
+            liveset.gen_uses(uses)
+            new_livesets.add(liveset)
+
+        self._livesets = new_livesets
+
+    def kill_vars(self, vars):
+        """
+        :param vars: Iterable of `Var`s whose uses to remove from all live sets.
+        """
+        new_livesets = set()
+
+        for liveset in self.livesets:
+            liveset.kill_vars(vars)
+            new_livesets.add(liveset)
+
+        self._livesets = new_livesets
+
+    def gen_uses_if_live(self, uses, if_live):
+        """ Add `uses` to each live set that contains at least one use from `if_live`.
+
+        :param uses: Iterable of `VarUse`
+        :param if_live: Iterable of `VarUse`
+        """
+        new_livesets = set()
+
+        for liveset in self.livesets:
+            if len(liveset.uses & set(if_live)) > 0:
+                liveset.gen_uses(uses)
+            new_livesets.add(liveset)
+
+        self._livesets = new_livesets
+
     @property
     def execution_ctx(self):
         """ Wrap this `LiveVars`s function address and stack frame pointers in an ExecutionCtx. """
@@ -249,18 +232,19 @@ def vars_modified(stmt, ctx, arch=None):
     :param Arch arch: The guest architecture. If provided, used to create more accurate results.
     :rtype: Iterable of Var
     """
-    if type(stmt) is pyvex.IRStmt.Put:
+    if type(stmt) is IRStmt.Put:
         if arch is None or stmt.offset not in (arch.sp_offset, arch.bp_offset, arch.ip_offset):
             return { Register(stmt.offset, get_type_size_bytes(stmt.data.result_type(None))) }
         else:
             return set()
 
-    elif type(stmt) is pyvex.IRStmt.Store:
+    elif type(stmt) is IRStmt.Store:
         ty = stmt.data.result_type(None)
         return { memory_location(stmt.addr, ctx, arch, ty) }
 
     else:
-        l.warning("[vars_modified] Unimplemented for statement type %s" % type(stmt))
+        if type(stmt) not in [IRStmt.NoOp, IRStmt.AbiHint, IRStmt.IMark]:
+            l.error("[vars_modified] Unimplemented for statement type %s" % type(stmt))
         return set()
 
 def vars_used_expr(expr, ctx, arch=None):
@@ -273,20 +257,22 @@ def vars_used_expr(expr, ctx, arch=None):
     """
     recurse = lambda e: vars_used_expr(e, ctx, arch)
 
-    if type(expr) is pyvex.IRExpr.Get \
-            and expr.offset not in [arch.sp_offset, arch.bp_offset]:
+    if type(expr) is IRExpr.Get \
+            and (arch is None or expr.offset not in [arch.sp_offset, arch.bp_offset]):
         return { Register(expr.offset, get_type_size_bytes(expr.ty)) }
 
-    elif type(expr) is pyvex.IRExpr.Load:
+    elif type(expr) is IRExpr.Load:
         return { memory_location(expr.addr, ctx, arch, expr.ty) } | recurse(expr.addr)
 
-    elif type(expr) in [pyvex.IRExpr.Unop, pyvex.IRExpr.Binop, pyvex.IRExpr.Triop, pyvex.IRExpr.Qop]:
+    elif type(expr) in [IRExpr.Unop, IRExpr.Binop, IRExpr.Triop, IRExpr.Qop]:
         return reduce(operator.or_, (recurse(e) for e in expr.args))
 
-    elif type(expr) is pyvex.IRExpr.ITE:
+    elif type(expr) is IRExpr.ITE:
         return recurse(expr.cond) | recurse(expr.iffalse) | recurse(expr.iftrue)
 
     else:
+        if type(expr) is not IRExpr.Const:
+            l.error("[vars_used_expr] unimplemented for expression type %s" % type(expr))
         return set()
 
 def vars_used(stmt, ctx, arch=None):
@@ -299,12 +285,16 @@ def vars_used(stmt, ctx, arch=None):
     """
     from_expr = lambda e: vars_used_expr(e, ctx, arch)
 
-    if type(stmt) is pyvex.IRStmt.Put:
+    if type(stmt) is IRStmt.Put:
         return from_expr(stmt.data)
 
-    elif type(stmt) is pyvex.IRStmt.Store:
+    elif type(stmt) is IRStmt.Store:
         return from_expr(stmt.addr) | from_expr(stmt.data)
 
+    elif type(stmt) is IRStmt.Exit:
+        return from_expr(stmt.guard) | from_expr(stmt.dst)
+
     else:
-        l.warning("[vars_used] unimplemented for statement type %s" % type(stmt))
+        if type(stmt) not in [IRStmt.NoOp, IRStmt.AbiHint, IRStmt.IMark]:
+            l.error("[vars_used] unimplemented for statement type %s" % type(stmt))
         return set()
